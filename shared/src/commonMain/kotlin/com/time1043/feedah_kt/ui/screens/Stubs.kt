@@ -21,9 +21,7 @@ fun SettingsScreen(nav: NavHostController) = Stub("Settings")
 
 
 @Composable
-fun ReviewScreen(nav: NavHostController, route: Review) = Stub("Review")
 
-@Composable
 fun SearchScreen(nav: NavHostController, route: Search) = Stub("Search")
 
 @Composable
