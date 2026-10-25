@@ -1,49 +1,75 @@
-This is a Kotlin Multiplatform project targeting Android, iOS, Web, Desktop (JVM).
+# feedah-kt
 
-* [/iosApp](./iosApp/iosApp) contains an iOS application. Even if you’re sharing your UI with Compose Multiplatform,
-  you need this entry point for your iOS app. This is also where you should add SwiftUI code for your project.
+Kotlin Multiplatform + Compose Multiplatform port of the feedah vocabulary app
+(source: `C:\code3\feedah`, Expo/React Native). The migration plan, decisions
+and the semantic-parity checklist live in [docs/PORT_PLAN.md](docs/PORT_PLAN.md).
 
-* [/shared](./shared/src) is for code that will be shared across your Compose Multiplatform applications.
-  It contains several subfolders:
-    - [commonMain](./shared/src/commonMain/kotlin) is for code that’s common for all targets.
-    - Other folders are for Kotlin code that will be compiled for only the platform indicated in the folder name.
-      For example, if you want to use Apple’s CoreCrypto for the iOS part of your Kotlin app,
-      the [iosMain](./shared/src/iosMain/kotlin) folder would be the right place for such calls.
-      Similarly, if you want to edit the Desktop (JVM) specific part, the [jvmMain](./shared/src/jvmMain/kotlin)
-      folder is the appropriate location.
+## Targets
 
-### Running the apps
+| Target | Status |
+|---|---|
+| Android (`androidApp`) | Primary — `assembleDebug` verified on Windows |
+| Desktop JVM (`desktopApp`) | Dev carrier — `jvmTest` runs the logic/data suites here |
+| iOS (`iosApp`, arm64 + simulator) | Compiles (`compileKotlinIosArm64` on Windows); runtime needs macOS/CI |
+| Web (js/wasmJs) | Removed for phase 1 — restore path below |
 
-Use the run configurations provided by the run widget in your IDE's toolbar. You can also use these commands and
-options:
+## Build & verify
 
-- Android app: `./gradlew :androidApp:assembleDebug`
-- Desktop app:
-    - Hot reload: `./gradlew :desktopApp:hotRun --auto`
-    - Standard run: `./gradlew :desktopApp:run`
-- Web app:
-    - Wasm target (faster, modern browsers): `./gradlew :webApp:wasmJsBrowserDevelopmentRun`
-    - JS target (slower, supports older browsers): `./gradlew :webApp:jsBrowserDevelopmentRun`
-- iOS app: open the [/iosApp](./iosApp) directory in Xcode and run it from there.
+```bash
+./gradlew :shared:jvmTest              # logic + data layer semantic tests
+./gradlew :shared:compileKotlinIosArm64
+./gradlew :androidApp:assembleDebug
+./gradlew :desktopApp:build -x test
+./gradlew :desktopApp:run              # manual smoke
+```
 
-### Running tests
+## Architecture
 
-Use the run button in your IDE's editor gutter, or run tests using Gradle tasks:
+```
+com.time1043.feedah_kt
+├── logic/        pure Kotlin: dates, format, daily aggregation, screen buses
+├── data/db/      SQLDelight schema (.sq), driver factories, FeedahRepo,
+│                 seed (composeResources/files/data/*.json), SettingsStore, UsageTracker
+├── platform/     TtsPlayer interface + android/ios actuals (desktop no-op)
+├── AppGraph      manual DI: init(factory, tts) → repo/settings/usage
+└── ui/           theme (11-color palette × 2), navigation routes,
+                  6 shared components, 8 screens
+```
 
-- Android tests: `./gradlew :shared:testAndroidHostTest`
-- Desktop tests: `./gradlew :shared:jvmTest`
-- Web tests:
-    - Wasm target: `./gradlew :shared:wasmJsTest`
-    - JS target: `./gradlew :shared:jsTest`
-- iOS tests: `./gradlew :shared:iosSimulatorArm64Test`
+Stack: SQLDelight 2.4.1 · org.jetbrains.androidx.navigation 2.10.0 ·
+kotlinx-serialization 1.12.0 · kotlinx-datetime 0.8.0 · CMP 1.12.1 ·
+minSdk 30 (framework SQLite needs 3.24+ for the same upserts the original
+ran via bundled expo-sqlite).
 
----
+## Deliberate exclusions (per plan)
 
-Learn more
-about [Kotlin Multiplatform](https://www.jetbrains.com.cn/en-us/help/kotlin-multiplatform-dev/get-started.html),
-[Compose Multiplatform](https://kotlinlang.org/compose-multiplatform/),
-[Kotlin/Wasm](https://kotl.in/wasm/)…
+- **Convex cloud sync** — `src/cloud/*`, `convex/`, the account/profile UI and
+  the `accountEmail` setting key are not ported. "Clear all data" therefore
+  skips the cloud wipe step.
+- **Notifications/reminders** — `expo-notifications`, reminder rows, the
+  DateTimePicker dependency and the `remindersEnabled`/`reminders` keys are
+  not ported. Time-of-day parsing helpers went with them.
+- `db/studio.tsx` (dev tool) and the legacy pre-drizzle DB reset.
 
-We would appreciate your feedback on Compose/Web and Kotlin/Wasm in the public Slack
-channel [#compose-web](https://slack-chats.kotlinlang.org/c/compose-web).
-If you face any issues, please report them on [YouTrack](https://youtrack.jetbrains.com/newIssue?project=CMP).
+## Known differences from the TS app
+
+- **Web target removed** — to restore: re-add `js {}`/`wasmJs {}` to
+  `shared/build.gradle.kts` + the `webApp` module, add the SQLDelight
+  `web-worker-driver` actual and wire the worker script. Code is kept
+  common-clean for this.
+- **Clear-all-data remounts** the navigation tree (back to Home) instead of
+  reloading settings in place.
+- **iOS silent-switch hint** (feed + settings) is not shown yet; the
+  `silentHintShown` setting key is kept for parity.
+- **Icons** are hand-built stroke ImageVectors (`FeedahIcons.kt`) instead of
+  Ionicons — no multiplatform icon artifact exists.
+- **Desktop TTS is a no-op**; Android uses TextToSpeech, iOS AVSpeechSynthesizer.
+- Search/Select pickers use `DropdownMenu` instead of bottom-sheet modals.
+- Old-device data migration (drizzle-era SQLite file import) is out of scope;
+  the KMP app starts from a fresh schema v1.
+
+## Running from a device tree
+
+The seed data (`data/*.json`, gitignored upstream) is vendored into
+`shared/src/commonMain/composeResources/files/data/` — 2050/700/370; `zz.json`
+was dead data upstream and is not carried over.
