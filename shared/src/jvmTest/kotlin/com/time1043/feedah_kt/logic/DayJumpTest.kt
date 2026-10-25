@@ -5,6 +5,11 @@ import kotlin.test.assertEquals
 import kotlin.test.assertNull
 
 class DayJumpTest {
+    @kotlin.test.BeforeTest
+    fun resetBus() {
+        DayJump.reset()
+    }
+
     @Test
     fun publishThenConsumeReturnsDay() {
         DayJump.publishSelectedDay("2026-10-25")

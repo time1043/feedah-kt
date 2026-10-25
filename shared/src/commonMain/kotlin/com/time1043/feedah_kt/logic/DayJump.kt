@@ -18,6 +18,11 @@ object DayJump {
     private var published: String? = null
     private var applied: String? = null
 
+    internal fun reset() {
+        published = null
+        applied = null
+    }
+
     fun publishSelectedDay(day: String) {
         published = day
     }

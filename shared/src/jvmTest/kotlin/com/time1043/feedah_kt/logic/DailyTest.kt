@@ -45,9 +45,9 @@ class DailyTest {
                 DailyPointerRow("2026-10-25", "2050", 12),
             ),
         )
-        assertEquals(8 + 12, usage.getValue("2026-10-24").words + usage.getValue("2026-10-25").words)
-        assertEquals(2, usage.getValue("2026-10-24").words) // 2050 bucket only
-        assertEquals(3, usage.getValue("2026-10-25").words) // 700 bucket only
+        // 2050: 8 then +4; 700: 2 then +3 → day1 = 10, day2 = 7.
+        assertEquals(10, usage.getValue("2026-10-24").words)
+        assertEquals(7, usage.getValue("2026-10-25").words)
     }
 
     @Test
