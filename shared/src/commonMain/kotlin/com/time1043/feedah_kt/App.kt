@@ -17,6 +17,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -89,9 +90,14 @@ fun App(driverFactory: DriverFactory, tts: TtsPlayer) {
     }
 
     val settings by AppGraph.settings!!.settings.collectAsStateWithLifecycle()
-    FeedahTheme(mode = settings.theme) {
-        StatusBarEffect(darkIcons = LocalScheme.current == Scheme.light)
-        RootNavigator()
+    // Remount the whole tree after a data wipe so every screen re-reads the
+    // fresh repo/settings (the original reloaded settings in place instead).
+    val dataVersion by AppGraph.dataVersion.collectAsStateWithLifecycle()
+    key(dataVersion) {
+        FeedahTheme(mode = settings.theme) {
+            StatusBarEffect(darkIcons = LocalScheme.current == Scheme.light)
+            RootNavigator()
+        }
     }
 }
 

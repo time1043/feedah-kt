@@ -10,6 +10,7 @@ import kotlin.concurrent.Volatile
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.MutableStateFlow
 
 /**
  * Manual dependency graph filled once at startup: the platform shell provides
@@ -20,6 +21,11 @@ import kotlinx.coroutines.SupervisorJob
 object AppGraph {
     /** App-lifetime scope for background work (usage ticker, fire-and-forget IO). */
     val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+
+    /** Bumped whenever the data layer is rebuilt (Clear all data) so the UI remounts. */
+    val dataVersion = MutableStateFlow(0)
+
+    @Volatile private var driverFactory: DriverFactory? = null
 
     @Volatile var tts: TtsPlayer? = null
         private set
@@ -32,10 +38,11 @@ object AppGraph {
 
     val ready: Boolean get() = repo != null && settings != null
 
-    suspend fun init(driverFactory: DriverFactory, tts: TtsPlayer) {
+    suspend fun init(factory: DriverFactory, tts: TtsPlayer) {
         if (ready) return
+        this.driverFactory = factory
         this.tts = tts
-        DatabaseProvider.init(driverFactory)
+        DatabaseProvider.init(factory)
         val db = DatabaseProvider.require()
         val repo = FeedahRepo(db)
         this.repo = repo
@@ -43,12 +50,20 @@ object AppGraph {
         this.settings = SettingsStore(db).also { it.load() }
     }
 
-    /** Erases everything and re-opens fresh (the "Clear all data" flow). */
-    fun resetData(driverFactory: DriverFactory) {
+    /**
+     * Erases everything (progress, flags, stats, settings), re-opens the
+     * database and re-seeds. The UI remounts via [dataVersion]. The original
+     * also wiped the cloud copy first — cloud sync is out of scope here.
+     */
+    suspend fun resetData() {
+        val factory = driverFactory ?: return
         UsageTracker.pauseAppUsage()
         UsageTracker.resetUsage()
-        DatabaseProvider.reset(driverFactory)
+        DatabaseProvider.reset(factory)
         repo = null
         settings = null
+        init(factory, tts ?: return)
+        UsageTracker.startAppUsage(appScope)
+        dataVersion.value += 1
     }
 }
