@@ -1,14 +1,16 @@
 package com.time1043.feedah_kt.ui.components
 
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -20,15 +22,12 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.time1043.feedah_kt.ui.theme.LocalFeedahColors
 import com.time1043.feedah_kt.ui.theme.withAlpha
 import kotlinx.datetime.LocalDate
-import kotlinx.datetime.TimeZone
-import kotlinx.datetime.daysUntil
 
 /** GitHub-style calendar heatmap for one year with month/weekday labels and tappable cells. */
 object HeatmapLayout {
@@ -100,15 +99,13 @@ fun Heatmap(
     thresholds: List<Long>,
     selectedDay: String? = null,
     onSelectDay: ((String) -> Unit)? = null,
-    cellSize: Float = 12f,
+    cellSize: Int = 12,
 ) {
     val colors = LocalFeedahColors.current
-    val density = androidx.compose.ui.platform.LocalDensity.current
-    val gap = 2f
-    val cellPx = with(density) { cellSize.dp.toPx() }
-    val gutterPx = with(density) { 30.dp.toPx() }
-    val gapPx = with(density) { gap.dp.toPx() }
-    val step = cellPx + gapPx
+    val gap = 2.dp
+    val cell = cellSize.dp
+    val step = cell + gap
+    val gutter = 30.dp
 
     val weeks = remember(year) { heatmapWeeks(year) }
     val monthLabels = remember(weeks) { heatmapMonthLabels(weeks) }
@@ -121,44 +118,47 @@ fun Heatmap(
         colors.success,
     )
 
-    val gridWidth = weeks.size * step - gapPx
-    val gridHeight = 7 * step - gapPx
-
     Column(
         Modifier
             .fillMaxWidth()
             .horizontalScroll(androidx.compose.foundation.rememberScrollState()),
     ) {
-        // Month labels row.
-        Box(Modifier.width(with(density) { (gutterPx + gridWidth).toDp() }).height(14.dp)) {
-            for ((index, label) in monthLabels.withIndex()) {
+        // Month labels strip, exactly like the original: 14dp high with a
+        // gap below it before the grid; labels sit at gutter + week offset.
+        Box(
+            Modifier
+                .padding(bottom = gap)
+                .height(14.dp)
+                .width(gutter + step * weeks.size - gap),
+        ) {
+            monthLabels.forEachIndexed { index, label ->
                 if (label != null) {
                     Text(
                         label,
                         color = colors.textTertiary,
                         fontSize = 9.sp,
-                        modifier = Modifier.offset(
-                            x = with(density) { (gutterPx + index * step).toDp() },
-                        ),
+                        modifier = Modifier.offset(x = gutter + step * index),
                     )
                 }
             }
         }
-        Row {
-            // Weekday gutter.
-            Column(
-                Modifier.width(with(density) { gutterPx.toDp() }),
-                verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(with(density) { gapPx.toDp() }),
-            ) {
+        Row(horizontalArrangement = Arrangement.spacedBy(gap)) {
+            // Weekday gutter: one cell-sized slot per row, so the labels line
+            // up with the grid rows exactly.
+            Column(Modifier.width(gutter), verticalArrangement = Arrangement.spacedBy(gap)) {
                 for (row in 0 until HeatmapLayout.WEEKDAYS) {
-                    Box(Modifier.height(with(density) { cellPx.toDp() }), contentAlignment = Alignment.CenterEnd) {
+                    Box(
+                        Modifier
+                            .height(cell)
+                            .fillMaxWidth(),
+                        contentAlignment = Alignment.CenterEnd,
+                    ) {
                         if (row in HeatmapLayout.LABEL_ROWS) {
                             Text(
                                 HeatmapLayout.WEEKDAY_LABELS[row],
                                 color = colors.textTertiary,
                                 fontSize = 9.sp,
                                 textAlign = TextAlign.Right,
-                                modifier = Modifier.fillMaxWidth(),
                             )
                         }
                     }
@@ -167,12 +167,13 @@ fun Heatmap(
             // The grid itself.
             Canvas(
                 Modifier
-                    .width(with(density) { gridWidth.toDp() })
-                    .height(with(density) { gridHeight.toDp() })
+                    .width(step * weeks.size - gap)
+                    .height(step * HeatmapLayout.WEEKDAYS - gap)
                     .pointerInput(year, weeks, selectedDay) {
+                        val stepPx = step.toPx()
                         detectTapGestures { offset ->
-                            val weekIndex = (offset.x / step).toInt()
-                            val dayIndex = (offset.y / step).toInt()
+                            val weekIndex = (offset.x / stepPx).toInt()
+                            val dayIndex = (offset.y / stepPx).toInt()
                             if (weekIndex in weeks.indices) {
                                 val day = weeks[weekIndex].getOrNull(dayIndex)
                                 if (day != null) onSelectDay?.invoke(day)
@@ -180,25 +181,26 @@ fun Heatmap(
                         }
                     },
             ) {
-                val corner = CornerRadius(with(density) { 2.dp.toPx() })
-                for ((weekIndex, days) in weeks.withIndex()) {
-                    for ((dayIndex, day) in days.withIndex()) {
-                        if (day == null) continue
-                        val selected = day == selectedDay
-                        val topLeft = Offset(weekIndex * step, dayIndex * step)
+                val stepPx = step.toPx()
+                val cellPx = cell.toPx()
+                val corner = CornerRadius(2.dp.toPx())
+                weeks.forEachIndexed { weekIndex, days ->
+                    days.forEachIndexed { dayIndex, day ->
+                        if (day == null) return@forEachIndexed
+                        val topLeft = Offset(weekIndex * stepPx, dayIndex * stepPx)
                         drawRoundRect(
                             color = levelColors[heatmapLevel(values[day], thresholds)],
                             topLeft = topLeft,
                             size = Size(cellPx, cellPx),
                             cornerRadius = corner,
                         )
-                        if (selected) {
+                        if (day == selectedDay) {
                             drawRoundRect(
                                 color = colors.accent,
                                 topLeft = topLeft,
                                 size = Size(cellPx, cellPx),
                                 cornerRadius = corner,
-                                style = Stroke(with(density) { 1.5.dp.toPx() }),
+                                style = Stroke(1.5.dp.toPx()),
                             )
                         }
                     }
