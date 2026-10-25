@@ -14,12 +14,14 @@ object DatabaseProvider {
     @Volatile private var database: FeedahDatabase? = null
     val isReady: Boolean get() = database != null
 
-    fun init(factory: DriverFactory) {
+    suspend fun init(factory: DriverFactory) {
         if (database != null) return
         try {
             val newDriver = factory.createDriver()
             driver = newDriver
-            database = FeedahDatabase(newDriver)
+            val db = FeedahDatabase(newDriver)
+            seedBuckets(db, loadBundledBuckets())
+            database = db
         } catch (error: Throwable) {
             driver = null
             database = null

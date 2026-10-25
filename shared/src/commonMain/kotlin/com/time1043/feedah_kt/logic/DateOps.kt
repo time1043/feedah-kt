@@ -9,6 +9,9 @@ import kotlin.time.Instant
 
 private const val DAY_MS = 86_400_000L
 
+/** Wall-clock now in epoch milliseconds (Date.now() in the TS original). */
+fun nowMs(): Long = Clock.System.now().toEpochMilliseconds()
+
 /** Local-timezone calendar date as YYYY-MM-DD. */
 fun todayLocalDate(now: Instant = Clock.System.now(), tz: TimeZone = TimeZone.currentSystemDefault()): String =
     now.toLocalDateTime(tz).date.toString()
