@@ -4,6 +4,13 @@
 > 目标仓库：本仓库 `feedah-kt`（KMP + Compose Multiplatform 1.12.1，分支 `mvp/261025`）
 > 规划方式：两个分析 agent（TS 侧全量盘点 / KMP 技术栈评估）+ 一个红队评审 agent，主会话决策。
 > 日期：2026-10-25
+>
+> **状态（2026-10-25）：M0-M7 全部完成，31 个 commit，四端验证绿**
+> （jvmTest 全量 / compileKotlinIosArm64 / androidApp assembleDebug / desktopApp build）。
+> 执行中的偏差已记录在 README「Known differences」：SQLDelight 2.4.1 对内建类型
+> `AS Int/Boolean` 生成坏 import（改原生 INTEGER + repo 边界收窄）、CMP 1.12 无
+> material-icons 工件（自绘 stroke ImageVector）、Clear-all-data 以 key 重挂载代替
+> 原地 reload、iOS 静音键提示暂缓、SelectRow 用 DropdownMenu 代替底部弹层。
 
 ## 0. 排除面（用户指定：Convex 与通知不做）
 
