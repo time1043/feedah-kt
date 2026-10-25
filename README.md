@@ -63,7 +63,9 @@ ran via bundled expo-sqlite).
   `silentHintShown` setting key is kept for parity.
 - **Icons** are hand-built stroke ImageVectors (`FeedahIcons.kt`) instead of
   Ionicons — no multiplatform icon artifact exists.
-- **Desktop TTS is a no-op**; Android uses TextToSpeech, iOS AVSpeechSynthesizer.
+- **Desktop TTS** speaks via OS engines (Windows SAPI through a persistent
+  PowerShell process, macOS `say`, Linux `spd-say`/`espeak`); Android uses
+  TextToSpeech, iOS AVSpeechSynthesizer.
 - Search/Select pickers use `DropdownMenu` instead of bottom-sheet modals.
 - Old-device data migration (drizzle-era SQLite file import) is out of scope;
   the KMP app starts from a fresh schema v1.

@@ -5,7 +5,7 @@ import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberWindowState
 import com.time1043.feedah_kt.data.db.DriverFactory
-import com.time1043.feedah_kt.platform.NoopTtsPlayer
+import com.time1043.feedah_kt.platform.JvmTtsPlayer
 
 fun main() = application {
     Window(
@@ -13,6 +13,6 @@ fun main() = application {
         title = "feedah",
         state = rememberWindowState(width = 420.dp, height = 820.dp),
     ) {
-        App(DriverFactory(), NoopTtsPlayer)
+        App(DriverFactory(), JvmTtsPlayer())
     }
 }
