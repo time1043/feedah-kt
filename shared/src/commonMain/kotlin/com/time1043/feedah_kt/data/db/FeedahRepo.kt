@@ -139,6 +139,90 @@ class FeedahRepo(internal val db: FeedahDatabase) {
         return Progress(before.round + 1, 0, now)
     }
 
+    // ===== reads: flags / rounds =====
+
+    fun getFlaggedWords(bucketId: String): List<WordRow> =
+        q.selectFlaggedWords(bucketId).executeAsList().map(::toWordRow)
+
+    /** Words that were flagged during a specific round (historical snapshot). */
+    fun getRoundFlaggedWords(bucketId: String, round: Int): List<WordRow> =
+        q.selectRoundFlaggedWords(bucketId, round.toLong()).executeAsList().map(::toWordRow)
+
+    fun countFlaggedWords(bucketId: String): Int =
+        (q.countFlaggedWords(bucketId).executeAsOneOrNull() ?: 0L).toInt()
+
+    fun getRoundHistory(bucketId: String): List<RoundHistoryRow> =
+        q.selectRoundHistory(bucketId).executeAsList().map {
+            RoundHistoryRow(
+                bucketId = it.bucket_id,
+                round = it.round.toInt(),
+                startedAt = it.started_at,
+                finishedAt = it.finished_at,
+                updatedAt = it.updated_at,
+            )
+        }
+
+    fun getRoundWords(bucketId: String, round: Int): List<RoundWordRow> =
+        q.selectRoundWords(bucketId, round.toLong()).executeAsList().map {
+            RoundWordRow(it.position.toInt(), it.reached != 0L, it.flagged != 0L)
+        }
+
+    // ===== search =====
+
+    /**
+     * Translates user input into a SQL LIKE pattern, matching SQL semantics:
+     *   %  any run of zero or more characters
+     *   _  exactly one character
+     * Only % and _ are treated as wildcards; any other character is literal.
+     * A query with no wildcard characters is wrapped as a contains-match (%query%),
+     * so a plain word search still finds substrings. Examples: `ter%` matches words
+     * starting with ter, `%ter` ending with ter, `%ter%` containing ter, `wo%rd`
+     * exactly starting with wo and ending with rd.
+     */
+    private fun toLikePattern(query: String): String {
+        val out = StringBuilder()
+        var hasWildcard = false
+        for (ch in query) {
+            when (ch) {
+                '%' -> { out.append('%'); hasWildcard = true }
+                '_' -> { out.append('_'); hasWildcard = true }
+                '\\' -> out.append("\\\\") // literal backslash doubles as the escape char
+                else -> out.append(ch)
+            }
+        }
+        return if (hasWildcard) out.toString() else "%$out%"
+    }
+
+    fun searchWords(
+        bucketId: String,
+        query: String,
+        matchMeaning: Boolean = false,
+        limit: Int = 100,
+    ): List<WordRow> {
+        // `|` splits the query into alternatives whose results are unioned, so two
+        // similar words that a single pattern cannot describe can be looked up at
+        // once (`scene|sense`, `sc_ne|s_nse`). Each alternative keeps the %/_ rules.
+        val trimmed = query.trim()
+        val alternatives = trimmed.split('|').map { it.trim() }.filter { it.isNotEmpty() }
+        val parts = if (alternatives.isNotEmpty()) alternatives else listOf(trimmed)
+
+        val merged = LinkedHashMap<Long, WordRow>()
+        for (part in parts) {
+            val pattern = toLikePattern(part)
+            // Forms match like the text does: a query may name any inflected form
+            // ("donate") and the hit is the headword that owns it ("donation").
+            // Forms is a JSON array in a text column, so LIKE runs over its
+            // serialized text; the row returned is always the word itself.
+            val rows = if (matchMeaning) {
+                q.searchWordsByTextOrMeaning(bucketId, pattern, pattern, pattern, limit.toLong())
+            } else {
+                q.searchWordsByText(bucketId, pattern, pattern, limit.toLong())
+            }.executeAsList()
+            for (row in rows) merged.putIfAbsent(row.position, toWordRow(row))
+        }
+        return merged.values.sortedBy { it.position }.take(limit)
+    }
+
     /** Toggles the flag on a word and records it against the current round. */
     fun setFlag(bucketId: String, position: Int, flagged: Boolean) {
         val round = getProgress(bucketId).round
