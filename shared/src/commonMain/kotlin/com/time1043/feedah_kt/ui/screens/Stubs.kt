@@ -16,12 +16,6 @@ import com.time1043.feedah_kt.ui.navigation.WordDetail
 // the real screen port in later commits.
 
 @Composable
-fun HomeScreen(nav: NavHostController) = Stub("Home")
-
-@Composable
-fun WordsScreen(nav: NavHostController) = Stub("Words")
-
-@Composable
 fun StatsScreen(nav: NavHostController) = Stub("Stats")
 
 @Composable

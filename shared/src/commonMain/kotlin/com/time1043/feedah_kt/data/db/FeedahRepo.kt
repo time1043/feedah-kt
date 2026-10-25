@@ -34,6 +34,8 @@ data class RoundHistoryRow(
     val updatedAt: Long,
 )
 
+data class FlagCounts(val green: Int, val red: Int)
+
 /**
  * The single SQL access layer, a statement-for-statement port of the original
  * src/db/repo.ts. Generated SQLDelight rows use Long for INTEGER columns and
@@ -169,6 +171,18 @@ class FeedahRepo(internal val db: FeedahDatabase) {
         q.selectRoundWords(bucketId, round.toLong()).executeAsList().map {
             RoundWordRow(it.position.toInt(), it.reached != 0L, it.flagged != 0L)
         }
+
+    /** Green/red counts for the current round, matching the stats timelines. */
+    fun getRoundFlagCounts(bucketId: String): FlagCounts {
+        val round = getProgress(bucketId).round
+        var green = 0
+        var red = 0
+        for (row in q.selectRoundWordFlags(bucketId, round.toLong()).executeAsList()) {
+            if (row.flagged != 0L) red += 1
+            else if (row.reached != 0L) green += 1
+        }
+        return FlagCounts(green, red)
+    }
 
     // ===== search =====
 
