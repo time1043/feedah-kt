@@ -1,5 +1,8 @@
 package com.time1043.feedah_kt.data.db
 
+import com.time1043.feedah_kt.logic.DailyPointerRow
+import com.time1043.feedah_kt.logic.DailyStatRow
+import com.time1043.feedah_kt.logic.dayBounds
 import com.time1043.feedah_kt.logic.nowMs
 import com.time1043.feedah_kt.logic.todayLocalDate
 import kotlinx.serialization.builtins.ListSerializer
@@ -251,5 +254,114 @@ class FeedahRepo(internal val db: FeedahDatabase) {
                 }
             }
         }
+    }
+
+    // ===== stats =====
+
+    fun addDailyTime(day: String, feedSeconds: Long, appSeconds: Long) {
+        q.upsertDailyStat(day, feedSeconds, appSeconds, nowMs())
+    }
+
+    fun listDailyStats(): List<DailyStatRow> =
+        q.selectDailyStats().executeAsList().map {
+            DailyStatRow(it.day, it.feed_seconds, it.app_seconds)
+        }
+
+    fun listDailyPointers(): List<DailyPointerRow> =
+        q.selectDailyPointers().executeAsList().map(::toDailyPointerRow)
+
+    fun getDailyPointersForBucket(bucketId: String): List<DailyPointerRow> =
+        q.selectDailyPointersForBucket(bucketId).executeAsList().map(::toDailyPointerRow)
+
+    fun getDailyStat(day: String): DailyStatRow? =
+        q.selectDailyStat(day).executeAsOneOrNull()?.let {
+            DailyStatRow(it.day, it.feed_seconds, it.app_seconds)
+        }
+
+    private fun toDailyPointerRow(row: Daily_pointer): DailyPointerRow =
+        DailyPointerRow(row.day, row.bucket_id, row.global_position)
+
+    private data class GlobalRange(val bucketId: String, val from: Long, val to: Long)
+
+    /**
+     * Distinct words completed on a local day, across all buckets, rebuilt from
+     * the daily pointer high-water marks: the day's globalPosition gain over the
+     * previous recorded snapshot names exactly the global positions settled that
+     * day — the same rule the stats word counts use, so the queue always matches
+     * the number. Per-word reached timestamps are not synced, so the pointer
+     * deltas are what survives a reinstall.
+     */
+    fun getWordsCompletedOn(day: String): List<WordRow> {
+        val rows = q.selectDailyPointersByBucketDay().executeAsList() // ordered (bucket_id, day)
+        val prevByBucket = HashMap<String, Long>()
+        val ranges = ArrayList<GlobalRange>()
+        for (row in rows) {
+            if (row.day == day) {
+                val from = (prevByBucket[row.bucket_id] ?: 0L) + 1
+                if (row.global_position >= from) {
+                    ranges.add(GlobalRange(row.bucket_id, from, row.global_position))
+                }
+            }
+            prevByBucket[row.bucket_id] = row.global_position
+        }
+
+        val out = ArrayList<WordRow>()
+        val bucketWords = HashMap<String, List<Word>>() // SQLDelight has no variadic IN
+        for (range in ranges) {
+            val wordCount = getWordCount(range.bucketId)
+            if (wordCount <= 0) continue
+            // A day's gain is contiguous global positions; crossing a round
+            // boundary wraps the within-round positions, and every round replays
+            // the same word set, so distinct positions is all the identity needed.
+            val positions = HashSet<Long>()
+            var gp = range.from
+            while (gp <= range.to) {
+                positions.add(((gp - 1) % wordCount) + 1)
+                gp++
+            }
+            val words = bucketWords.getOrPut(range.bucketId) { q.selectWords(range.bucketId).executeAsList() }
+            out.addAll(words.filter { it.position in positions }.map(::toWordRow))
+        }
+        return out
+    }
+
+    /**
+     * Recovers the start timestamp of a round from historical word settlements
+     * or daily pointer snapshots, used to repair missing or zero startedAt.
+     */
+    fun recoverRoundStartedAt(bucketId: String, round: Int, wordCount: Int): Long {
+        val earliestWord = q.minRoundReachedAt(bucketId, round.toLong())
+            .executeAsOneOrNull()?.min_reached_at
+        if (earliestWord != null && earliestWord > 0) return earliestWord
+
+        val startGlobalPos = (round - 1L) * wordCount + 1
+        val pointers = q.selectDailyPointersForBucket(bucketId).executeAsList()
+        for (p in pointers) {
+            if (p.global_position >= startGlobalPos) {
+                return dayBounds(p.day).start
+            }
+        }
+        return 0
+    }
+
+    // ===== review cursor =====
+
+    /** Furthest card settled in a review session (0 when none was recorded). */
+    fun getReviewCursor(key: String): Int =
+        (q.selectReviewCursor(key).executeAsOneOrNull() ?: 0L).toInt()
+
+    /**
+     * Records the card a review session settled on. Monotonic: swiping back to
+     * re-view earlier cards never lowers the resume position, matching the feed's
+     * high-water pointer.
+     */
+    fun saveReviewCursor(key: String, position: Int) {
+        if (position <= 0) return
+        q.upsertReviewCursor(key, position.toLong())
+    }
+
+    /** Drops a review session's cursor — the queue was finished. */
+    fun clearReviewCursor(key: String) {
+        q.clearReviewCursor(key)
     }
 }
