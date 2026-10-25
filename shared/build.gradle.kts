@@ -6,6 +6,18 @@ plugins {
     alias(libs.plugins.composeMultiplatform)
     alias(libs.plugins.composeCompiler)
     alias(libs.plugins.kotlinSerialization)
+    alias(libs.plugins.sqldelight)
+}
+
+sqldelight {
+    databases {
+        create("FeedahDatabase") {
+            packageName.set("com.time1043.feedah_kt.data.db")
+            // Upserts (ON CONFLICT DO UPDATE) need SQLite 3.24+; the android
+            // driver uses the framework SQLite, hence minSdk 30.
+            dialect("app.cash.sqldelight:sqlite-3-24-dialect:${libs.versions.sqldelight.get()}")
+        }
+    }
 }
 
 kotlin {

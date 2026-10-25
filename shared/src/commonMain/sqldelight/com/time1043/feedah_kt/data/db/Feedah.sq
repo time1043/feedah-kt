@@ -1,0 +1,274 @@
+-- Final schema shape of the original drizzle migrations (feedah v0.0.2),
+-- written fresh as schema v1: the KMP app is a new install with no legacy DB.
+-- Boolean columns are plain INTEGER mapped via ColumnAdapter (0/1), matching
+-- drizzle's `integer({mode:'boolean'})`; INTEGER stays Long in Kotlin and the
+-- repo layer narrows to Int at its boundary.
+
+CREATE TABLE bucket (
+  id TEXT NOT NULL PRIMARY KEY,
+  word_count INTEGER NOT NULL
+);
+
+CREATE TABLE word (
+  bucket_id TEXT NOT NULL,
+  position INTEGER NOT NULL,
+  text TEXT NOT NULL,
+  ipa TEXT NOT NULL DEFAULT '',
+  meaning TEXT NOT NULL DEFAULT '',
+  -- JSON-encoded string[] (same serialization as drizzle's mode:'json').
+  forms TEXT NOT NULL DEFAULT '[]',
+  flagged INTEGER NOT NULL DEFAULT 0,
+  -- Wall-clock stamp of the last flag/unflag; powers LWW cloud sync.
+  flagged_at INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (bucket_id, position)
+);
+
+CREATE INDEX idx_word_flag ON word (bucket_id, flagged);
+
+CREATE TABLE bucket_progress (
+  bucket_id TEXT NOT NULL PRIMARY KEY,
+  round INTEGER NOT NULL DEFAULT 1,
+  pointer INTEGER NOT NULL DEFAULT 0,
+  started_at INTEGER NOT NULL DEFAULT 0,
+  -- Stamp of the last progress write; powers LWW cloud sync of startedAt.
+  progress_updated_at INTEGER NOT NULL DEFAULT 0
+);
+
+-- Per-round per-word state. reached=true means the card was settled by hand
+-- in that round (jump targets never count). flagged=true marks the flag was
+-- on at some point during the round; rows may exist with reached=false when
+-- the word was flagged without being reached (e.g. from search).
+CREATE TABLE round_word (
+  bucket_id TEXT NOT NULL,
+  round INTEGER NOT NULL,
+  position INTEGER NOT NULL,
+  reached INTEGER NOT NULL DEFAULT 0,
+  flagged INTEGER NOT NULL DEFAULT 0,
+  reached_at INTEGER NOT NULL DEFAULT 0,
+  updated_at INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (bucket_id, round, position)
+);
+
+CREATE TABLE round_history (
+  bucket_id TEXT NOT NULL,
+  round INTEGER NOT NULL,
+  started_at INTEGER NOT NULL,
+  finished_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (bucket_id, round)
+);
+
+CREATE TABLE daily_stat (
+  day TEXT NOT NULL PRIMARY KEY,
+  feed_seconds INTEGER NOT NULL DEFAULT 0,
+  app_seconds INTEGER NOT NULL DEFAULT 0,
+  updated_at INTEGER NOT NULL DEFAULT 0
+);
+
+-- Latest high-water global position ((round-1)*word_count + pointer) per
+-- bucket per active day; daily word count is the difference of consecutive
+-- snapshots. Rows are written only when the pointer advances.
+CREATE TABLE daily_pointer (
+  day TEXT NOT NULL,
+  bucket_id TEXT NOT NULL,
+  global_position INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (day, bucket_id)
+);
+
+CREATE TABLE meta (
+  key TEXT NOT NULL PRIMARY KEY,
+  value TEXT NOT NULL,
+  updated_at INTEGER NOT NULL DEFAULT 0
+);
+
+-- Resume position per review session (day:<day>, round:<bucket>:<round>,
+-- flagged:<bucket>). Local only — deliberately absent from the cloud mirror.
+CREATE TABLE review_cursor (
+  key TEXT NOT NULL PRIMARY KEY,
+  position INTEGER NOT NULL DEFAULT 0
+);
+
+-- ===== bucket =====
+
+selectBuckets:
+SELECT * FROM bucket ORDER BY word_count DESC;
+
+selectWordCount:
+SELECT word_count FROM bucket WHERE id = ?;
+
+upsertBucket:
+INSERT INTO bucket (id, word_count) VALUES (?, ?)
+ON CONFLICT (id) DO UPDATE SET word_count = excluded.word_count;
+
+-- ===== bucket_progress =====
+
+selectProgress:
+SELECT * FROM bucket_progress WHERE bucket_id = ?;
+
+insertBucketProgressIfAbsent:
+INSERT INTO bucket_progress (bucket_id, round, pointer, started_at, progress_updated_at)
+VALUES (?, 1, 0, 0, ?)
+ON CONFLICT (bucket_id) DO NOTHING;
+
+updateProgressPointer:
+UPDATE bucket_progress SET pointer = ?, progress_updated_at = ? WHERE bucket_id = ?;
+
+updateProgressPointerAndStartedAt:
+UPDATE bucket_progress SET pointer = ?, started_at = ?, progress_updated_at = ? WHERE bucket_id = ?;
+
+updateProgressNextRound:
+UPDATE bucket_progress SET round = ?, pointer = 0, started_at = ?, progress_updated_at = ? WHERE bucket_id = ?;
+
+-- ===== word =====
+
+selectWord:
+SELECT * FROM word WHERE bucket_id = ? AND position = ?;
+
+selectWordFlag:
+SELECT flagged FROM word WHERE bucket_id = ? AND position = ?;
+
+selectWords:
+SELECT * FROM word WHERE bucket_id = ? ORDER BY position;
+
+selectFlaggedWords:
+SELECT * FROM word WHERE bucket_id = ? AND flagged = 1 ORDER BY position;
+
+countFlaggedWords:
+SELECT COUNT(*) AS n FROM word WHERE bucket_id = ? AND flagged = 1;
+
+updateWordFlag:
+UPDATE word SET flagged = ?, flagged_at = ? WHERE bucket_id = ? AND position = ?;
+
+deleteWords:
+DELETE FROM word WHERE bucket_id = ?;
+
+insertWord:
+INSERT INTO word (bucket_id, position, text, ipa, meaning, forms, flagged, flagged_at)
+VALUES (?, ?, ?, ?, ?, ?, 0, 0)
+ON CONFLICT (bucket_id, position) DO UPDATE SET
+  text = excluded.text,
+  ipa = excluded.ipa,
+  meaning = excluded.meaning,
+  forms = excluded.forms,
+  flagged = excluded.flagged;
+
+searchWordsByText:
+SELECT * FROM word WHERE bucket_id = ?
+  AND (lower(text) LIKE lower(?) ESCAPE '\' OR lower(forms) LIKE lower(?) ESCAPE '\')
+ORDER BY position
+LIMIT ?;
+
+searchWordsByTextOrMeaning:
+SELECT * FROM word WHERE bucket_id = ?
+  AND (lower(text) LIKE lower(?) ESCAPE '\' OR lower(forms) LIKE lower(?) ESCAPE '\' OR lower(meaning) LIKE lower(?) ESCAPE '\')
+ORDER BY position
+LIMIT ?;
+
+-- ===== round_word =====
+
+-- advancePointer settle: on conflict only reached/reachedAt/updatedAt move,
+-- so an earlier flag snapshot survives being reached later.
+insertRoundWordReached:
+INSERT INTO round_word (bucket_id, round, position, reached, flagged, reached_at, updated_at)
+VALUES (?, ?, ?, 1, ?, ?, ?)
+ON CONFLICT (bucket_id, round, position) DO UPDATE SET
+  reached = 1,
+  reached_at = excluded.reached_at,
+  updated_at = excluded.updated_at;
+
+-- setFlag(on): merges into an existing reached row without touching reached.
+insertRoundWordFlagged:
+INSERT INTO round_word (bucket_id, round, position, reached, flagged, reached_at, updated_at)
+VALUES (?, ?, ?, 0, 1, 0, ?)
+ON CONFLICT (bucket_id, round, position) DO UPDATE SET
+  flagged = 1,
+  updated_at = excluded.updated_at;
+
+selectRoundWord:
+SELECT * FROM round_word WHERE bucket_id = ? AND round = ? AND position = ?;
+
+deleteRoundWord:
+DELETE FROM round_word WHERE bucket_id = ? AND round = ? AND position = ?;
+
+updateRoundWordFlagOff:
+UPDATE round_word SET flagged = 0, updated_at = ? WHERE bucket_id = ? AND round = ? AND position = ?;
+
+selectRoundWordFlags:
+SELECT reached, flagged FROM round_word WHERE bucket_id = ? AND round = ?;
+
+selectRoundWords:
+SELECT position, reached, flagged FROM round_word WHERE bucket_id = ? AND round = ? ORDER BY position;
+
+selectRoundFlaggedWords:
+SELECT word.bucket_id, word.position, word.text, word.ipa, word.meaning, word.forms, word.flagged, word.flagged_at
+FROM word
+JOIN round_word ON round_word.bucket_id = word.bucket_id AND round_word.position = word.position
+WHERE word.bucket_id = ? AND round_word.round = ? AND round_word.flagged = 1
+ORDER BY word.position;
+
+minRoundReachedAt:
+SELECT MIN(reached_at) AS min_reached_at FROM round_word
+WHERE bucket_id = ? AND round = ? AND reached = 1 AND reached_at > 0;
+
+-- ===== round_history =====
+
+upsertRoundHistory:
+INSERT INTO round_history (bucket_id, round, started_at, finished_at, updated_at)
+VALUES (?, ?, ?, ?, ?)
+ON CONFLICT (bucket_id, round) DO UPDATE SET
+  started_at = excluded.started_at,
+  finished_at = excluded.finished_at,
+  updated_at = excluded.updated_at;
+
+selectRoundHistory:
+SELECT * FROM round_history WHERE bucket_id = ? ORDER BY round;
+
+-- ===== daily_stat / daily_pointer =====
+
+upsertDailyStat:
+INSERT INTO daily_stat (day, feed_seconds, app_seconds, updated_at) VALUES (?, ?, ?, ?)
+ON CONFLICT (day) DO UPDATE SET
+  feed_seconds = feed_seconds + excluded.feed_seconds,
+  app_seconds = app_seconds + excluded.app_seconds,
+  updated_at = excluded.updated_at;
+
+selectDailyStats:
+SELECT * FROM daily_stat ORDER BY day;
+
+selectDailyStat:
+SELECT * FROM daily_stat WHERE day = ?;
+
+upsertDailyPointer:
+INSERT INTO daily_pointer (day, bucket_id, global_position, updated_at) VALUES (?, ?, ?, ?)
+ON CONFLICT (day, bucket_id) DO UPDATE SET
+  global_position = excluded.global_position,
+  updated_at = excluded.updated_at;
+
+selectDailyPointers:
+SELECT * FROM daily_pointer ORDER BY day;
+
+selectDailyPointersForBucket:
+SELECT * FROM daily_pointer WHERE bucket_id = ? ORDER BY day;
+
+selectDailyPointersByBucketDay:
+SELECT * FROM daily_pointer ORDER BY bucket_id, day;
+
+-- ===== meta / review_cursor =====
+
+selectAllMeta:
+SELECT * FROM meta;
+
+upsertMeta:
+INSERT INTO meta (key, value, updated_at) VALUES (?, ?, ?)
+ON CONFLICT (key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at;
+
+selectReviewCursor:
+SELECT position FROM review_cursor WHERE key = ?;
+
+upsertReviewCursor:
+INSERT INTO review_cursor (key, position) VALUES (?, ?)
+ON CONFLICT (key) DO UPDATE SET position = MAX(position, excluded.position);
+
+clearReviewCursor:
+DELETE FROM review_cursor WHERE key = ?;
