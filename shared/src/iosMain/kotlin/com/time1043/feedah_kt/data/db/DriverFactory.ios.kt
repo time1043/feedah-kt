@@ -1,3 +1,5 @@
+@file:OptIn(kotlinx.cinterop.ExperimentalForeignApi::class)
+
 package com.time1043.feedah_kt.data.db
 
 import app.cash.sqldelight.db.SqlDriver

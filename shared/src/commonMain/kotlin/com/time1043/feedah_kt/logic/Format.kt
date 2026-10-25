@@ -13,7 +13,8 @@ private val WEEKDAYS = listOf("Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat")
 
 /** Formats seconds as "47m" or "1h 12m". */
 fun formatMinutes(totalSeconds: Long): String {
-    val minutes = Math.round(totalSeconds / 60.0)
+    // floor(x + 0.5) — the exact JS Math.round semantics (ties toward +infinity).
+    val minutes = kotlin.math.floor(totalSeconds / 60.0 + 0.5).toLong()
     if (minutes < 60) return "${minutes}m"
     return "${minutes / 60}h ${minutes % 60}m"
 }

@@ -1,6 +1,7 @@
 package com.time1043.feedah_kt.data.db
 
 import app.cash.sqldelight.db.SqlDriver
+import kotlin.concurrent.Volatile
 
 /**
  * Holds the single app database. Shells call [init] once at startup with a
@@ -11,7 +12,6 @@ import app.cash.sqldelight.db.SqlDriver
 object DatabaseProvider {
     @Volatile private var driver: SqlDriver? = null
     @Volatile private var database: FeedahDatabase? = null
-
     val isReady: Boolean get() = database != null
 
     fun init(factory: DriverFactory) {
