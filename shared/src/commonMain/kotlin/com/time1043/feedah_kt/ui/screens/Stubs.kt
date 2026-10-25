@@ -15,8 +15,6 @@ import com.time1043.feedah_kt.ui.navigation.WordDetail
 // Phase-1 placeholders so the navigation shell compiles; each is replaced by
 // the real screen port in later commits.
 
-@Composable
-fun StatsScreen(nav: NavHostController) = Stub("Stats")
 
 @Composable
 fun SettingsScreen(nav: NavHostController) = Stub("Settings")

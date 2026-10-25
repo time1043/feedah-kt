@@ -190,3 +190,19 @@ val ChevronDownIcon: ImageVector = icon("ChevronDown") {
         lineTo(18f, 9f)
     }
 }
+
+val ChevronLeftIcon: ImageVector = icon("ChevronLeft") {
+    strokePath {
+        moveTo(15f, 6f)
+        lineTo(9f, 12f)
+        lineTo(15f, 18f)
+    }
+}
+
+val ChevronRightIcon: ImageVector = icon("ChevronRight") {
+    strokePath {
+        moveTo(9f, 6f)
+        lineTo(15f, 12f)
+        lineTo(9f, 18f)
+    }
+}
