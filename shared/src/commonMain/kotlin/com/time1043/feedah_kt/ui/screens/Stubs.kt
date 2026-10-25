@@ -19,8 +19,6 @@ import com.time1043.feedah_kt.ui.navigation.WordDetail
 @Composable
 fun SettingsScreen(nav: NavHostController) = Stub("Settings")
 
-@Composable
-fun FeedScreen(nav: NavHostController, route: Feed) = Stub("Feed ${route.bucket}")
 
 @Composable
 fun ReviewScreen(nav: NavHostController, route: Review) = Stub("Review")
