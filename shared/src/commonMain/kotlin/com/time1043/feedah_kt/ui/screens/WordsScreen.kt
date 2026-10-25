@@ -49,9 +49,13 @@ import com.time1043.feedah_kt.data.db.WordRow
 import com.time1043.feedah_kt.logic.DayJump
 import com.time1043.feedah_kt.logic.pushOnce
 import com.time1043.feedah_kt.ui.components.BucketTabs
+import com.time1043.feedah_kt.ui.components.BookmarkFilledIcon
+import com.time1043.feedah_kt.ui.components.CloseIcon
 import com.time1043.feedah_kt.ui.components.EyeIcon
 import com.time1043.feedah_kt.ui.components.EyeOffIcon
+import com.time1043.feedah_kt.ui.components.HomeIcon
 import com.time1043.feedah_kt.ui.components.ProgressBar
+import com.time1043.feedah_kt.ui.components.SearchIcon
 import com.time1043.feedah_kt.ui.components.Screen
 import com.time1043.feedah_kt.ui.navigation.WordDetail
 import com.time1043.feedah_kt.ui.theme.FontSize
@@ -124,6 +128,9 @@ fun WordsScreen(nav: NavHostController) {
     }
 
     Screen {
+        // Screen is a Box — the vertical stack needs its own Column, otherwise
+        // the list fills the whole area over the tabs/header/scrub bar.
+        Column(Modifier.fillMaxSize()) {
         BucketTabs(buckets, tab) { id -> tab = id }
         Row(
             Modifier
@@ -159,14 +166,14 @@ fun WordsScreen(nav: NavHostController) {
             )
         }
         if (words.isEmpty()) {
-            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
                 CircularProgressIndicator(color = colors.textTertiary)
             }
         } else {
             LazyColumn(
                 state = listState,
                 modifier = Modifier
-                    .fillMaxSize()
+                    .weight(1f)
                     .background(colors.background),
             ) {
                 itemsIndexed(words, key = { _, word -> word.position }) { _, word ->
@@ -226,6 +233,7 @@ fun WordsScreen(nav: NavHostController) {
                     }
                 }
             }
+        }
         }
     }
 }

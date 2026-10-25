@@ -137,13 +137,19 @@ val BookmarkOutlineIcon: ImageVector = icon("BookmarkOutline") {
 
 val EyeIcon: ImageVector = icon("Eye") {
     strokePath {
+        // Simple robust eye: almond outline + round pupil, no helper arcs.
         moveTo(2.5f, 12f)
-        curveTo(4.5f, 7.5f, 8f, 5.5f, 12f, 5.5f)
-        curveTo(16f, 5.5f, 19.5f, 7.5f, 21.5f, 12f)
-        curveTo(19.5f, 16.5f, 16f, 18.5f, 12f, 18.5f)
-        curveTo(8f, 18.5f, 4.5f, 16.5f, 2.5f, 12f)
+        curveTo(5f, 7f, 8f, 5.2f, 12f, 5.2f)
+        curveTo(16f, 5.2f, 19f, 7f, 21.5f, 12f)
+        curveTo(19f, 17f, 16f, 18.8f, 12f, 18.8f)
+        curveTo(8f, 18.8f, 5f, 17f, 2.5f, 12f)
         close()
-        circle(12f, 12f, 3.1f)
+        moveTo(12f, 8.9f)
+        curveTo(13.7f, 8.9f, 15.1f, 10.3f, 15.1f, 12f)
+        curveTo(15.1f, 13.7f, 13.7f, 15.1f, 12f, 15.1f)
+        curveTo(10.3f, 15.1f, 8.9f, 13.7f, 8.9f, 12f)
+        curveTo(8.9f, 10.3f, 10.3f, 8.9f, 12f, 8.9f)
+        close()
     }
 }
 
