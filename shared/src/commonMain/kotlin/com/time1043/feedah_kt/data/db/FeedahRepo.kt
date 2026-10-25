@@ -221,7 +221,7 @@ class FeedahRepo(internal val db: FeedahDatabase) {
             } else {
                 q.searchWordsByText(bucketId, pattern, pattern, limit.toLong())
             }.executeAsList()
-            for (row in rows) merged.putIfAbsent(row.position, toWordRow(row))
+            for (row in rows) if (!merged.containsKey(row.position)) merged[row.position] = toWordRow(row)
         }
         return merged.values.sortedBy { it.position }.take(limit)
     }
