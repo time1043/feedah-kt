@@ -137,6 +137,7 @@ fun Heatmap(
                         label,
                         color = colors.textTertiary,
                         fontSize = 9.sp,
+                        maxLines = 1,
                         modifier = Modifier.offset(x = gutter + step * index),
                     )
                 }
@@ -158,6 +159,12 @@ fun Heatmap(
                                 HeatmapLayout.WEEKDAY_LABELS[row],
                                 color = colors.textTertiary,
                                 fontSize = 9.sp,
+                                // The original sets lineHeight equal to the box
+                                // height (heatmap.tsx:118); without it the font's
+                                // natural line box (~1.3em) overflows the 12dp
+                                // slot and the glyphs get vertically clipped.
+                                lineHeight = cellSize.sp,
+                                maxLines = 1,
                                 textAlign = TextAlign.Right,
                             )
                         }
